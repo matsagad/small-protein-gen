@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--data_folder", required=True)
     parser.add_argument("-o", "--out_folder", required=True)
     parser.add_argument("--min_length", default=40)
-    parser.add_argument("--max_length", default=100)
+    parser.add_argument("--max_length", default=128)
     parser.add_argument("--n_workers", default=8)
     args = parser.parse_args()
 
