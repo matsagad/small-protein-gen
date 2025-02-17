@@ -1,5 +1,6 @@
 import argparse
 from biotite.structure.io.pdb import PDBFile
+from biotite.structure.geometry import dihedral_backbone, BadStructureError
 import multiprocessing as mp
 import os
 import warnings
@@ -15,8 +16,12 @@ def link_if_filtered(file: str, f_out: str, min_len: int, max_len: int) -> None:
         atom_arr = f_pdb.get_structure(model=1)
     n_residues = atom_arr[atom_arr.atom_name == CA_ATOM].shape[0]
     if min_len <= n_residues <= max_len:
-        print(file, n_residues)
-        os.symlink(file, os.path.join(f_out, os.path.basename(file)))
+        try:
+            dihedral_backbone(atom_arr)
+        except BadStructureError:
+            # Filter out if backbone is invalid
+            return
+        os.symlink(os.path.realpath(file), os.path.join(f_out, os.path.basename(file)))
 
 
 if __name__ == "__main__":
