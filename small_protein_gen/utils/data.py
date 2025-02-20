@@ -64,12 +64,14 @@ def get_backbone_angles(atom_arr: AtomArray, max_n_residues: int = 128) -> Tenso
     n_atoms, ca_atoms, c_atoms = (
         bb_atoms[bb_atoms.atom_name == atom] for atom in (N_ATOM, CA_ATOM, C_ATOM)
     )
-    bond_angles = torch.full((N_RES, 3), torch.nan)
+    bond_angles = torch.full((N_RES, 3), 0)
     bond_angles[:, 0] = to_tensor(angle(n_atoms, ca_atoms, c_atoms))
     bond_angles[:-1, 1] = to_tensor(angle(ca_atoms[:-1], c_atoms[1:], n_atoms[1:]))
     bond_angles[:-1, 2] = to_tensor(angle(c_atoms[1:], n_atoms[1:], ca_atoms[1:]))
 
     bb_angles[:N_RES] = torch.cat([torsion_angles, bond_angles], dim=1)
+    bb_angles[bb_angles.isnan()] = 0
+
     return bb_angles, mask
 
 
