@@ -1,0 +1,25 @@
+_target_: small_protein_gen.models.foldingdiff.FoldingDiff
+
+net:
+  _target_: small_protein_gen.models.foldingdiff.BERTDenoiser
+  input_dim: 6
+  out_dim: ${model.net.input_dim}
+  ff_dim: 384
+  attn_head_dim: 32
+  n_attn_heads: 6
+  n_encoder_blocks: 6
+  dropout: 0.1
+  pos_embed: "relative_key"
+  time_embed: "random_fourier"
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: True
+  lr: 5e-5
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ConstantLR
+  _partial_: True
+
+n_time_steps: 250
+noise_schedule: "cosine"
