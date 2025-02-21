@@ -61,7 +61,9 @@ class BERTDenoiser(nn.Module):
     def forward(self, x: Tensor, t: Tensor, mask: Tensor) -> Tensor:
         """
         Args:
-          x: (B x N x 6)
+          x:    (B x N x 6)
+          t:    (B)
+          mask: (B x N)
         """
         x = self.proj(x)
         if self.embed_pos is not None:
@@ -70,5 +72,6 @@ class BERTDenoiser(nn.Module):
 
         embeddings = self.encoder(x, mask)
         decoded = self.decoder(embeddings)
+        decoded[mask == 0] = 0
 
         return decoded

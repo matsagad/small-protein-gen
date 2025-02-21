@@ -10,7 +10,7 @@ from functools import partial
 import os
 import torch
 from torch import Tensor
-from typing import Callable, List, TypeVar
+from typing import Any, Callable, List, Tuple, TypeVar
 import warnings
 
 ProteinFeature = TypeVar("ProteinFeature")
@@ -23,10 +23,17 @@ PDB_SUFFIX = ".pdb"
 to_tensor = torch.from_numpy
 
 
+def index_wrapper(
+    i: int, callback: Callable[[Any], Any], *args: List[Any]
+) -> Tuple[Any, int]:
+    return callback(*args), i
+
+
 def process_pdbs_in_directory(
     data_path: str, callback: Callable[[AtomArray], ProteinFeature], n_workers: int = 8
 ) -> List[ProteinFeature]:
     futures = []
+    i = 0
     with ProcessPoolExecutor(n_workers) as executor:
         for file in os.scandir(data_path):
             if not file.is_file() or not file.name.endswith(PDB_SUFFIX):
@@ -36,14 +43,21 @@ def process_pdbs_in_directory(
                 warnings.simplefilter("ignore")
                 # Only interested in monomers
                 atom_arr = f_pdb.get_structure(model=1)
-            futures.append(executor.submit(callback, atom_arr))
-    out = []
+            futures.append(executor.submit(index_wrapper, i, callback, atom_arr))
+            i += 1
+    out = [None] * i
     for future in as_completed(futures):
-        out.append(future.result())
+        if future.exception() is None:
+            result, i = future.result()
+            out[i] = result
+        else:
+            raise future.exception()
     return out
 
 
-def get_backbone_angles(atom_arr: AtomArray, max_n_residues: int = 128) -> Tensor:
+def get_backbone_angles(
+    atom_arr: AtomArray, max_n_residues: int = 128
+) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Returns:
       (N x 6) backbone angles matrix.
@@ -51,7 +65,7 @@ def get_backbone_angles(atom_arr: AtomArray, max_n_residues: int = 128) -> Tenso
     bb_atoms = atom_arr[filter_peptide_backbone(atom_arr)]
     N_RES = len(bb_atoms[bb_atoms.atom_name == CA_ATOM])
 
-    bb_angles = torch.zeros(max_n_residues, 6)
+    bb_angles = torch.full((max_n_residues, 6), torch.nan)
     mask = torch.zeros(max_n_residues).long()
     mask[:N_RES] = 1
 
@@ -64,15 +78,16 @@ def get_backbone_angles(atom_arr: AtomArray, max_n_residues: int = 128) -> Tenso
     n_atoms, ca_atoms, c_atoms = (
         bb_atoms[bb_atoms.atom_name == atom] for atom in (N_ATOM, CA_ATOM, C_ATOM)
     )
-    bond_angles = torch.full((N_RES, 3), 0)
+    bond_angles = torch.full((N_RES, 3), torch.nan)
     bond_angles[:, 0] = to_tensor(angle(n_atoms, ca_atoms, c_atoms))
     bond_angles[:-1, 1] = to_tensor(angle(ca_atoms[:-1], c_atoms[1:], n_atoms[1:]))
     bond_angles[:-1, 2] = to_tensor(angle(c_atoms[1:], n_atoms[1:], ca_atoms[1:]))
 
     bb_angles[:N_RES] = torch.cat([torsion_angles, bond_angles], dim=1)
-    bb_angles[bb_angles.isnan()] = 0
+    angle_mask = torch.where(bb_angles.isnan(), 0, 1).long()
+    bb_angles[angle_mask == 0] = 0
 
-    return bb_angles, mask
+    return bb_angles, angle_mask, mask
 
 
 get_backbone_angles_from_directory = partial(

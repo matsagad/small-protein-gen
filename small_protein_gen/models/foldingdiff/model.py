@@ -20,8 +20,17 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
             net, optimizer, scheduler, compile, n_time_steps, noise_schedule
         )
 
+        self.register_buffer("mu", torch.Tensor([0] * 6))
         self.register_buffer("_beta", torch.Tensor([l2_thresh]))
         self.register_buffer("_pi", torch.Tensor([torch.pi]))
+
+    def on_train_start(self) -> None:
+        super().on_train_start()
+        if not hasattr(self.trainer.datamodule, "mu"):
+            raise Exception(
+                "Datamodule does not have dataset mean stored in a parameter `mu`."
+            )
+        self.mu = self.trainer.datamodule.mu
 
     def _wrap(self, x: Tensor) -> Tensor:
         return torch.fmod(x + self._pi, 2 * self._pi) - self._pi
@@ -30,7 +39,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
         return self.net(x, t, mask)
 
     def model_step(self, batch: Tuple[Tensor, Tensor]) -> Tensor:
-        x, mask = batch
+        x, loss_mask, mask = batch
         t = self.noise_scheduler.sample_uniform_time(mask, device=self.device)
         _t = t.view(-1, 1, 1)
         epsilon = torch.rand(x.shape, device=self.device)
@@ -43,7 +52,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
 
         d = torch.abs(self._wrap(epsilon - epsilon_hat))
         L = torch.where(d < self._beta, 0.5 * (d**2) / self._beta, d - 0.5 * self._beta)
-        loss = torch.sum(L * mask.unsqueeze(-1)) / torch.sum(mask)
+        loss = torch.sum(L * loss_mask) / torch.sum(loss_mask)
 
         return loss
 
