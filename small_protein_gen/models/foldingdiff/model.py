@@ -1,5 +1,6 @@
 from small_protein_gen.components.noise_scheduler import NoiseSchedule
 from small_protein_gen.models.base_model import BaseDenoiser, DefaultLightningModule
+from small_protein_gen.utils.data import angles_to_backbone
 import torch
 from torch import Tensor
 from typing import Tuple
@@ -35,6 +36,22 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
     def _wrap(self, x: Tensor) -> Tensor:
         return torch.fmod(x + self._pi, 2 * self._pi) - self._pi
 
+    def _angle_mask_from_mask(self, mask: Tensor) -> Tensor:
+        B, N, F = *mask.shape, 6
+
+        angle_mask = torch.ones((B, N, F)) * mask.unsqueeze(-1)
+
+        # Only phi is nan at the start
+        angle_mask[mask[:, 0] == 1, 0, 0] = 0
+
+        # Only phi and theta_1 are not nan at the end
+        _mask = torch.ones_like(angle_mask)
+        _mask[torch.arange(B), torch.argmax(mask * torch.arange(N), dim=1)] = 0
+        _mask[:, :, [0, 3]] = 1
+        angle_mask *= _mask
+
+        return angle_mask
+
     def forward(self, x: Tensor, t: Tensor, mask: Tensor) -> torch.Tensor:
         return self.net(x, t, mask)
 
@@ -57,5 +74,41 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
         return loss
 
     def sample_protein(self, mask: Tensor) -> Tensor:
-        # TODO: implement inference loop
-        return super().sample_protein(mask)
+        self.net.eval()
+        ns = self.noise_scheduler
+
+        B, N, F = *mask.shape, 6
+        T = ns.T
+        x_T = self._wrap(torch.randn((B, N, F)))
+        x_T[mask == 0] = 0
+        x_t = x_T
+
+        for i in reversed(range(1, T + 1)):
+            t = torch.tensor([i] * B, device=self.device).long()
+            epsilon_hat = self.forward(x_t, t, mask)
+            _t = t.view(-1, 1, 1)
+
+            sqrt_alpha_t = ns.sqrt_alpha[_t]
+            beta_t = ns.beta[_t]
+            sqrt_beta_t = ns.sqrt_beta[_t]
+            sqrt_one_minus_alpha_bar_t = ns.sqrt_one_minus_alpha_cum_prod[_t]
+            sqrt_one_minus_alpha_bar_t_minus_one = (
+                ns.sqrt_one_minus_alpha_cum_prod[_t - 1] if i > 1 else 0
+            )
+            sigma_t = (
+                sqrt_one_minus_alpha_bar_t_minus_one
+                * sqrt_beta_t
+                / sqrt_one_minus_alpha_bar_t
+            )
+
+            z = torch.randn((B, N, F)) * mask.unsqueeze(-1) if i > 1 else 0
+            x_t = self._wrap(
+                (x_t - beta_t * epsilon_hat / sqrt_one_minus_alpha_bar_t) / sqrt_alpha_t
+                + sigma_t * z
+            )
+
+        angle_mask = self._angle_mask_from_mask(mask)
+        x_zero = (x_t + self.mu) * angle_mask
+        bb_coords = angles_to_backbone(x_zero, mask)
+
+        return bb_coords

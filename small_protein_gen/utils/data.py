@@ -93,3 +93,15 @@ def get_backbone_angles(
 get_backbone_angles_from_directory = partial(
     process_pdbs_in_directory, callback=get_backbone_angles
 )
+
+
+def angles_to_backbone(angle: Tensor, mask: Tensor) -> Tensor:
+    """
+    Args:
+      (B x N x 6) batched backbone angles tensor
+      (B x N) batched backbone angles mask
+    Returns:
+      (B x N x 3) backbone 3D CA coordinates
+    """
+    # TODO: implement nerf algorithm
+    pass
