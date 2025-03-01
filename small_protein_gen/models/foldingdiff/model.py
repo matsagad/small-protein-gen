@@ -36,27 +36,12 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
     def _wrap(self, x: Tensor) -> Tensor:
         return torch.fmod(x + self._pi, 2 * self._pi) - self._pi
 
-    def _angle_mask_from_mask(self, mask: Tensor) -> Tensor:
-        B, N, F = *mask.shape, 6
-
-        angle_mask = torch.ones((B, N, F)) * mask.unsqueeze(-1)
-
-        # Only phi is nan at the start
-        angle_mask[mask[:, 0] == 1, 0, 0] = 0
-
-        # Only phi and theta_1 are not nan at the end
-        _mask = torch.ones_like(angle_mask)
-        _mask[torch.arange(B), torch.argmax(mask * torch.arange(N), dim=1)] = 0
-        _mask[:, :, [0, 3]] = 1
-        angle_mask *= _mask
-
-        return angle_mask
-
     def forward(self, x: Tensor, t: Tensor, mask: Tensor) -> torch.Tensor:
         return self.net(x, t, mask)
 
     def model_step(self, batch: Tuple[Tensor, Tensor]) -> Tensor:
-        x, loss_mask, mask = batch
+        x, mask = batch
+        F = x.shape[-1]
         t = self.noise_scheduler.sample_uniform_time(mask, device=self.device)
         _t = t.view(-1, 1, 1)
         epsilon = torch.rand(x.shape, device=self.device)
@@ -69,7 +54,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
 
         d = torch.abs(self._wrap(epsilon - epsilon_hat))
         L = torch.where(d < self._beta, 0.5 * (d**2) / self._beta, d - 0.5 * self._beta)
-        loss = torch.sum(L * loss_mask) / torch.sum(loss_mask)
+        loss = torch.sum(L * mask.unsqueeze(-1)) / torch.sum(F * mask)
 
         return loss
 
@@ -79,13 +64,14 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
 
         B, N, F = *mask.shape, 6
         T = ns.T
-        x_T = self._wrap(torch.randn((B, N, F)))
+        x_T = self._wrap(torch.randn((B, N, F), device=self.device))
         x_T[mask == 0] = 0
         x_t = x_T
 
         for i in reversed(range(1, T + 1)):
             t = torch.tensor([i] * B, device=self.device).long()
-            epsilon_hat = self.forward(x_t, t, mask)
+            with torch.no_grad():
+                epsilon_hat = self.forward(x_t, t, mask)
             _t = t.view(-1, 1, 1)
 
             sqrt_alpha_t = ns.sqrt_alpha[_t]
@@ -107,8 +93,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
                 + sigma_t * z
             )
 
-        angle_mask = self._angle_mask_from_mask(mask)
-        x_zero = (x_t + self.mu) * angle_mask
+        x_zero = x_t + self.mu
         bb_coords = angles_to_backbone(x_zero, mask)
 
         return bb_coords

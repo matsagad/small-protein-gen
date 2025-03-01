@@ -23,7 +23,7 @@ class AngleDataModule(L.LightningDataModule):
         self.data_test = None
 
     def setup(self, stage: Optional[str] = None) -> None:
-        angles, angle_masks, masks = map(
+        angles, masks = map(
             torch.stack,
             zip(*get_backbone_angles_from_directory(self.hparams.data_path)),
         )
@@ -41,19 +41,13 @@ class AngleDataModule(L.LightningDataModule):
         is_train, is_val, is_test = torch.split(perm, [n_train, n_val, n_test])
 
         # Subtract train dataset mean from entire dataset
-        self.mu = angles[is_train].sum((0, 1)) / angle_masks[is_train].sum((0, 1))
+        self.mu = angles[is_train].sum((0, 1)) / masks[is_train].sum((0, 1))
         angles -= self.mu
-        angles[angle_masks == 0] = 0
+        angles[masks == 0] = 0
 
-        self.data_train = TensorDataset(
-            angles[is_train], angle_masks[is_train], masks[is_train]
-        )
-        self.data_val = TensorDataset(
-            angles[is_val], angle_masks[is_val], masks[is_val]
-        )
-        self.data_test = TensorDataset(
-            angles[is_test], angle_masks[is_test], masks[is_test]
-        )
+        self.data_train = TensorDataset(angles[is_train], masks[is_train])
+        self.data_val = TensorDataset(angles[is_val], masks[is_val])
+        self.data_test = TensorDataset(angles[is_test], masks[is_test])
 
     def train_dataloader(self) -> DataLoader[Any]:
         return DataLoader(
