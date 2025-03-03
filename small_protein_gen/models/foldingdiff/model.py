@@ -42,13 +42,15 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
     def model_step(self, batch: Tuple[Tensor, Tensor]) -> Tensor:
         x, mask = batch
         F = x.shape[-1]
-        t = self.noise_scheduler.sample_uniform_time(mask, device=self.device)
+        ns = self.noise_scheduler
+
+        t = ns.sample_uniform_time(mask, device=self.device)
         _t = t.view(-1, 1, 1)
-        epsilon = torch.rand(x.shape, device=self.device)
+        epsilon = torch.randn(x.shape, device=self.device)
 
         x_noised = self._wrap(
-            self.noise_scheduler.sqrt_alpha_cum_prod[_t] * x
-            + self.noise_scheduler.sqrt_one_minus_alpha_cum_prod[_t] * epsilon
+            ns.sqrt_alpha_cum_prod[_t] * x
+            + ns.sqrt_one_minus_alpha_cum_prod[_t] * epsilon
         )
         epsilon_hat = self.forward(x_noised, t, mask)
 
@@ -93,7 +95,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
                 + sigma_t * z
             )
 
-        x_zero = x_t + self.mu
+        x_zero = self._wrap(x_t + self.mu)
         bb_coords = angles_to_backbone(x_zero, mask)
 
         return bb_coords
