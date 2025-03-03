@@ -14,7 +14,6 @@ get_scheduler = NOISE_SCHEDULER_REGISTRY.get
 
 
 class NoiseScheduler(abc.ABC, nn.Module):
-
     def __init__(self, T: int) -> None:
         super().__init__()
 
@@ -45,8 +44,7 @@ class NoiseScheduler(abc.ABC, nn.Module):
 
 @register_scheduler("cosine")
 class CosineNoiseScheduler(NoiseScheduler):
-
-    def __init__(self, T: int, offset: float = 8e-3, exponent: float = 1) -> None:
+    def __init__(self, T: int, offset: float = 8e-3, exponent: float = 2) -> None:
         self.T = T
         self.offset = offset
         self.exponent = exponent
