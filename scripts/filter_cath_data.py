@@ -1,12 +1,18 @@
 import argparse
 from biotite.structure.io.pdb import PDBFile
-from biotite.structure.geometry import dihedral_backbone, BadStructureError
+from biotite.structure.geometry import (
+    dihedral_backbone,
+    filter_peptide_backbone,
+    BadStructureError,
+)
 import multiprocessing as mp
 import os
 import warnings
 
-PDB_SUFFIX = ".pdb"
+N_ATOM = "N"
 CA_ATOM = "CA"
+C_ATOM = "C"
+PDB_SUFFIX = ".pdb"
 
 
 def link_if_filtered(file: str, f_out: str, min_len: int, max_len: int) -> None:
@@ -21,6 +27,17 @@ def link_if_filtered(file: str, f_out: str, min_len: int, max_len: int) -> None:
         except BadStructureError:
             # Filter out if backbone is invalid
             return
+        bb_atoms = atom_arr[filter_peptide_backbone(atom_arr)]
+        n_atoms, ca_atoms, c_atoms = (
+            bb_atoms[bb_atoms.atom_name == atom] for atom in (N_ATOM, CA_ATOM, C_ATOM)
+        )
+        if not (n_atoms.shape == ca_atoms.shape == c_atoms.shape):
+            return
+        res_ids = ca_atoms.get_annotation("res_id")
+        if not (res_ids[:-1] + 1 == res_ids[1:]).all():
+            # Filter out if sequence id is not monotonic
+            return
+
         os.symlink(os.path.realpath(file), os.path.join(f_out, os.path.basename(file)))
 
 
