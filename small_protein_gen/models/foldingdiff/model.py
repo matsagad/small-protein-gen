@@ -1,9 +1,10 @@
 from small_protein_gen.components.noise_scheduler import NoiseSchedule
+from small_protein_gen.protein.structure import ProteinStructure
 from small_protein_gen.models.base_model import BaseDenoiser, DefaultLightningModule
 from small_protein_gen.utils.data import angles_to_backbone
 import torch
 from torch import Tensor
-from typing import Tuple
+from typing import List, Tuple
 
 
 class FoldingDiff(BaseDenoiser, DefaultLightningModule):
@@ -60,7 +61,7 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
 
         return loss
 
-    def sample_protein(self, mask: Tensor) -> Tensor:
+    def sample_protein(self, mask: Tensor) -> List[ProteinStructure]:
         self.net.eval()
         ns = self.noise_scheduler
 
@@ -97,5 +98,10 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
 
         x_zero = self._wrap(x_t + self.mu)
         bb_coords = angles_to_backbone(x_zero, mask)
-
-        return bb_coords
+        structs = [
+            ProteinStructure.from_backbone(
+                bb_coords[i, :, : int(mask[i].sum().item()) + 1]
+            )
+            for i in range(B)
+        ]
+        return structs

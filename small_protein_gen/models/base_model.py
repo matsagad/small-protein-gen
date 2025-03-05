@@ -1,22 +1,23 @@
 import abc
 import lightning as L
+from small_protein_gen.protein.structure import ProteinStructure
 from small_protein_gen.components.noise_scheduler import NoiseSchedule, get_scheduler
 import torch
 from torch import Tensor
 from torchmetrics import MeanMetric, MinMetric
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class BaseGenerator(abc.ABC):
 
     @abc.abstractmethod
-    def sample_protein(self, mask: Tensor) -> Tensor:
+    def sample_protein(self, mask: Tensor) -> List[ProteinStructure]:
         """Sample protein backbones given mask.
 
         Args:
           mask: (N x L) binary mask indicating AA positions and total length.
         Returns:
-          (N x L x 3) protein backbone coordinates.
+          list of protein structure objects
         """
         raise NotImplementedError()
 
