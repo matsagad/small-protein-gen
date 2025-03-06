@@ -18,8 +18,19 @@ optimizer:
   lr: 5e-5
 
 scheduler:
-  _target_: torch.optim.lr_scheduler.ConstantLR
+  _target_: small_protein_gen.components.lr_scheduler.LazySequentialLR
   _partial_: True
+  _convert_: all
+  schedulers:
+    - _target_: torch.optim.lr_scheduler.LinearLR
+      _partial_: True
+      start_factor: 0.001
+      end_factor: 1.0
+      total_iters: 36
+    - _target_: torch.optim.lr_scheduler.ConstantLR
+      _partial_: True
+      factor: 1.0
+  milestones: [36]
 
 n_time_steps: 250
 noise_schedule: "cosine"
