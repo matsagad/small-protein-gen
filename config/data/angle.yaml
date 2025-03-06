@@ -1,5 +1,5 @@
 _target_: small_protein_gen.data.angle_datamodule.AngleDataModule
 data_path: "data/dompdb-filtered"
 train_val_test_split: [0.80, 0.10, 0.10]
-batch_size: 256
+batch_size: 128
 seed: 0
