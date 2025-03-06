@@ -2,3 +2,14 @@ defaults:
   - model: ???
   - data: ???
   - trainer: cpu
+
+trainer:
+  callbacks:
+  - _target_: lightning.pytorch.callbacks.LearningRateMonitor
+    logging_interval: "step"
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    save_top_k: -1
+    every_n_epochs: 60
+    save_last: True
+    
+ckpt_path: null
