@@ -9,7 +9,8 @@ trainer:
     logging_interval: "step"
   - _target_: lightning.pytorch.callbacks.ModelCheckpoint
     save_top_k: -1
-    every_n_epochs: 60
+    every_n_epochs: 50
     save_last: True
-    
+  max_epochs: 250
+
 ckpt_path: null

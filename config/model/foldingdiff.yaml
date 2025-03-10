@@ -26,11 +26,11 @@ scheduler:
       _partial_: True
       start_factor: 0.001
       end_factor: 1.0
-      total_iters: 36
+      total_iters: 25
     - _target_: torch.optim.lr_scheduler.ConstantLR
       _partial_: True
       factor: 1.0
-  milestones: [36]
+  milestones: [25]
 
 n_time_steps: 250
 noise_schedule: "cosine"
