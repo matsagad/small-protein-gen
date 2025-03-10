@@ -1,13 +1,18 @@
+import random
 from small_protein_gen.components.noise_scheduler import NoiseSchedule
 from small_protein_gen.protein.structure import ProteinStructure
-from small_protein_gen.models.base_model import BaseDenoiser, DefaultLightningModule
+from small_protein_gen.models.base_model import (
+    BaseDenoiser,
+    BaseGenerator,
+    DefaultLightningModule,
+)
 from small_protein_gen.utils.data import angles_to_backbone
 import torch
 from torch import Tensor
 from typing import List, Tuple
 
 
-class FoldingDiff(BaseDenoiser, DefaultLightningModule):
+class FoldingDiff(BaseDenoiser, BaseGenerator, DefaultLightningModule):
     def __init__(
         self,
         net: torch.nn.Module,
@@ -62,6 +67,41 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
         return loss
 
     def sample_protein(self, mask: Tensor) -> List[ProteinStructure]:
+        B = mask.shape[0]
+        x = self.sample_loop(mask)
+
+        bb_coords = angles_to_backbone(x, mask.cpu())
+        structs = [
+            ProteinStructure.from_backbone(
+                bb_coords[i, :, : int(mask[i].sum().item()) + 1]
+            )
+            for i in range(B)
+        ]
+        return structs
+
+    def sample_trajectory(
+        self, mask: Tensor, center_at_origin: bool = True
+    ) -> List[List[ProteinStructure]]:
+        x = self.sample_loop(mask, get_trajectory=True)
+        B, T, N, F = x.shape
+        flat_mask = mask.repeat(T, 1)
+
+        bb_coords = angles_to_backbone(x.view((B * T, N, F)), flat_mask.cpu())
+        trajs = []
+        for i in range(B):
+            traj = []
+            for t in range(T):
+                j = i * T + t
+                struct = ProteinStructure.from_backbone(
+                    bb_coords[j, :, : int(flat_mask[j].sum().item()) + 1]
+                )
+                if center_at_origin:
+                    struct.center_at_origin()
+                traj.append(struct)
+            trajs.append(traj)
+        return trajs
+
+    def sample_loop(self, mask: Tensor, get_trajectory: bool = False) -> Tensor:
         self.net.eval()
         ns = self.noise_scheduler
 
@@ -70,6 +110,9 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
         x_T = self._wrap(torch.randn((B, N, F), device=self.device))
         x_T[mask == 0] = 0
         x_t = x_T
+
+        if get_trajectory:
+            trajectory = [self._wrap(x_T + self.mu).detach().cpu()]
 
         for i in reversed(range(1, T + 1)):
             t = torch.tensor([i] * B, device=self.device).long()
@@ -90,18 +133,20 @@ class FoldingDiff(BaseDenoiser, DefaultLightningModule):
                 / sqrt_one_minus_alpha_bar_t
             )
 
-            z = torch.randn((B, N, F)) * mask.unsqueeze(-1) if i > 1 else 0
+            z = (
+                torch.randn((B, N, F), device=self.device) * mask.unsqueeze(-1)
+                if i > 1
+                else 0
+            )
             x_t = self._wrap(
                 (x_t - beta_t * epsilon_hat / sqrt_one_minus_alpha_bar_t) / sqrt_alpha_t
                 + sigma_t * z
             )
+            if get_trajectory:
+                trajectory.append(self._wrap(x_t + self.mu).detach().cpu())
 
-        x_zero = self._wrap(x_t + self.mu)
-        bb_coords = angles_to_backbone(x_zero, mask)
-        structs = [
-            ProteinStructure.from_backbone(
-                bb_coords[i, :, : int(mask[i].sum().item()) + 1]
-            )
-            for i in range(B)
-        ]
-        return structs
+        if get_trajectory:
+            return torch.stack(trajectory, dim=1)  # B x T x N x 6
+
+        x_zero = self._wrap(x_t + self.mu).detach().cpu()
+        return x_zero
