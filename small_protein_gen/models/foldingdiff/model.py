@@ -40,7 +40,7 @@ class FoldingDiff(BaseDenoiser, BaseGenerator, DefaultLightningModule):
         self.mu = self.trainer.datamodule.mu
 
     def _wrap(self, x: Tensor) -> Tensor:
-        return torch.fmod(x + self._pi, 2 * self._pi) - self._pi
+        return torch.remainder(x + self._pi, 2 * self._pi) - self._pi
 
     def forward(self, x: Tensor, t: Tensor, mask: Tensor) -> torch.Tensor:
         return self.net(x, t, mask)
