@@ -102,6 +102,17 @@ class DefaultLightningModule(abc.ABC, L.LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+    
+    def on_save_checkpoint(self, checkpoint):
+        state_dict = checkpoint["state_dict"]
+        keys = list(state_dict.keys())
+        for key in keys:
+            # Handle checkpoint saving when model is compiled
+            if key.startswith("net._orig_mod"):
+                new_key = "".join(key.split("._orig_mod"))
+                state_dict[new_key] = state_dict[key]
+                del state_dict[key]
+        return super().on_save_checkpoint(checkpoint)
 
 
 class BaseDenoiser(DefaultLightningModule):
