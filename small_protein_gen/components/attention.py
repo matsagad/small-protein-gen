@@ -17,7 +17,7 @@ class SelfAttention(nn.Module):
         head_dim: int,
         n_heads: int,
         pos_embed: PositionalEmbedding = "absolute",
-        max_rel_pos_dist: int = None,
+        max_rel_pos_dist: int = 127,
     ) -> None:
         super().__init__()
 
@@ -31,14 +31,16 @@ class SelfAttention(nn.Module):
         self.to_qkv = nn.Linear(input_dim, 3 * hidden_dim)
 
         self.rel_pos_embed_key = None
-        if pos_embed == "shaw":
+        if pos_embed == "relative_key":
             self.rel_pos_embed_key = RelativePositionalEmbedding(
                 max_rel_pos_dist, head_dim
             )
 
         self.out_proj = nn.Linear(hidden_dim, input_dim)
 
-    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self, x: Tensor, mask: Optional[Tensor] = None, bias: Optional[Tensor] = None
+    ) -> Tensor:
         # x: (B x S x D), mask: (B x S)
         qkv_shape = (*x.shape[:-1], self.head_dim, self.n_heads)
         qkv = self.to_qkv(x).chunk(3, dim=-1)
@@ -50,7 +52,10 @@ class SelfAttention(nn.Module):
             seq_len = x.shape[1]
             rel_pos = self.rel_pos_embed_key(seq_len)
             # Q(K + A)^T = QK^T + QA^T
-            attn_score = attn_score + torch.einsum("bqdh,dkz->bqkh", q, rel_pos)
+            attn_score = attn_score + torch.einsum("bqdh,qkd->bqkh", q, rel_pos)
+
+        if bias is not None:
+            attn_score = attn_score + bias
 
         if mask is not None:
             attn_score[mask == 0] = -1e8
