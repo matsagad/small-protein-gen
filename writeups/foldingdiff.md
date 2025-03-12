@@ -1,6 +1,6 @@
 # FoldingDiff
 
-This paper [^1] provides a rather elegant way of representing protein backbones: their angles. This side-steps the need for working with Cartesian coordinates (in the network at least) and gives us roto-translation equivariance for free. Of course, nothing is ever free, and we'll go over some quirks with this modelling approach.
+This paper [^1] provides an elegant way of representing protein backbones: their angles. This side-steps the need to work with Cartesian coordinates (in the network at least) and gives us roto-translation equivariance for free. Of course, this comes at the expense of some quirks with the modelling approach.
 
 ## Parameterisation
 Each residue is represented by three dihedral angles ($\psi$, $\phi$, $\omega$) and three bond angles ($\theta_1$, $\theta_2$, $\theta_3$) as described below. Note that the bond lengths are assumed fixed.
@@ -18,18 +18,18 @@ Each residue is represented by three dihedral angles ($\psi$, $\phi$, $\omega$) 
 
 </div>
 
-As a residue's position depends on the one before it, we can fix the coordinates of the N, CA, and C atoms of the first residue, so we really only model the remaining $N - 1$ residues. The object we are modelling therefore lies in $\mathbb{T}^{6\times (N - 1)}$, where $\mathbb{T}$ is the circle group (think of it as the group on the set of angles with addition modulo $2\pi$ as an operation).
+As a residue's position depends on the one before it, we can fix the first residue's N, CA, and C atom coordinates, only needing to model the remaining $N - 1$ residues. The entire protein object can hence be summarised as an element of $\mathbb{T}^{6\times (N - 1)}$, where $\mathbb{T}$ is the circle group (i.e. defined by the set of angles with addition modulo $2\pi$ as an operation).
 
-To get back its 3D coordinates, the backbone can be built one residue at a time using the _natural extension of reference frame_ (NERF) algorithm [^2]. While the angle parameterisation is lossy, the 3D reconstruction has minimal error (see [^1] Fig S1) which is cool. Would the tiny errors accumulate throughout the chain for really long proteins? Very astute observation. This is not true for 3D reconstruction errors (see [^1] Fig S2), but, from the modelling perspective, this is indeed the case. 
+To retrieve its 3D coordinates, the backbone can be built one residue at a time using the _natural extension of reference frame_ (NERF) algorithm [^2]. The angle parameterisation is lossy, but the 3D reconstruction has minimal error (see [^1] Fig S1) which is cool. Do the tiny errors accumulate throughout the chain for really long proteins? While errors from fixing the bond lengths do not scale with length (see [^1] Fig S2), it is very much the case that angular differences from the ground truth can largely impact the resulting structure.
 
 ## Diffusion on $\mathbb{T}$
 
-Intuitively, one can imagine noising the angles as usual but then wrapping them between $[0, 2\pi)$ by taking the modulo $2\pi$. Another way to think about this is to visualise $\mathbb{T}$ as a torus and "an angle being noised" as a point doing a random walk on its surface. The latter is known as a _geodesic random walk_.
+Intuitively, one can imagine noising the angles as usual but then wrapping them between $[0, 2\pi)$ by taking the modulo $2\pi$. Another way to think about this is to visualise $\mathbb{T}$ as a torus and "an angle being noised" as a point doing a random walk on its surface.
 
-Under the DDPM framework and based on [^3] and [^4], the forward process has the transition kernel
+Under the DDPM framework, based on [^3] and [^4], the forward process has the transition kernel in the form of a wrapped Gaussian
 
 $$
-q(x_{t} \| x_{t - 1}) \propto \sum_{d \in \mathbb{Z}^{6(N - 1)}}{\exp\left(-\frac{\lVert x_{t} - \sqrt{1 - \beta_{t}} x_{t - 1} + 2\pi d \rVert^2}{2\beta_t^2}\right)}.
+q(x_{t} \| x_{t - 1}) \propto \sum_{d \in \mathbb{Z}}{\exp\left(-\frac{\lVert x_{t} - \sqrt{1 - \beta_{t}} x_{t - 1} + 2\pi d \rVert^2}{2\beta_t^2}\right)}.
 $$
 
 ## Architecture Details
@@ -39,7 +39,7 @@ We train a denoiser $\epsilon_{\theta}$ acting on the angles. As done in the pap
     - Random Fourier features for time embeddings
 - MLP head to predict the angles from the BERT embeddings
 
-The loss, a hybrid between an L1 and L2 empirically found to do well by [^1], is given by 
+The loss, a hybrid between an L1 and L2, is given by 
 
 ```math
 $$
@@ -62,13 +62,13 @@ where $w(x) = [(x + \pi)\mod 2\pi] + \pi$ wraps angles to be in the interval $[-
 We train a smaller version of the model (e.g. fewer attention heads, encoder layers, diffusion timesteps) for 250 epochs with the AdamW optimiser, where the learning rate is linearly scaled from 0 to 5e-5 in the first 25 epochs and back to 0 in the remaining epochs.
 
 ## Learning Local vs Global Topology
-Similar to the study, we can learn the local topology of proteins, with a mix of $\alpha$-helices and $\beta$-strands as demonstrated by the below plots of samples of varying lengths (50-128 residues) from the model.
+Like the study, we find our model learns the local topology of proteins, with a mix of $\alpha$-helices and $\beta$-strands as demonstrated by the below plots made up of samples of varying lengths (50-128 residues) from the model.
 
 <p align="middle">
 <img src="../media/foldingdiff_ramachandran.png" height="200"/><img src="../media/foldingdiff_sscounts.png" height="200"/><img src="../media/foldingdiff_denoise.gif" height="200"/>
 </p>
 
-However, most designs with $\beta$-strands looked rather disordered unlike proteins from the dataset. Since sheets can be formed by strands that are close in distance but possibly far in sequence, it is reasonable to expect that the model is unable (as it was never explicitly incentivised anyway) to adjust intermediate angles to put strands close to each other in 3D space. It is only trained to minimise an MSE on angles, accurately modelling the local topology but missing out on the global coherence of the structure due to an accumulation of errors throughout the backbone.
+However, most designs with $\beta$-strands look rather disordered, unlike proteins from the dataset. Since sheets can be formed by strands that are close in distance but possibly far in sequence, it is reasonable to expect that the model is unable (as it was never explicitly incentivised anyway) to adjust intermediate angles to put strands close to each other in 3D space. It is only trained to minimise an MSE on angles, accurately modelling the local topology but missing out on the global coherence of the structure due to an accumulation of errors throughout the backbone.
 
 The _lever-arm effect_ is one instance of such instability in this modelling approach. Below is an illustration.
 ```
@@ -85,7 +85,7 @@ It is not so surprising then that collisions can easily form by tweaking some an
 ## Endnote
 Despite its caveats, most of which have been addressed by an alternative representation in rigid-body frames, this is among my personal favourite approaches due to its simplicity. It works, and samples really do have nicely formed local helices and wiggly strands.
 
-I feel that the model could be improved with some minimal modifications. Perhaps the model could be additionally supplied by more explicit global features, e.g. contact maps, and probed to also reconstruct it, forcing it to achieve some form of global awareness. However, balancing this joint loss may be a challenge. Another option could be to preserve the diffusion process but use a loss acting on the 3D coordinates, using NERF for reconstruction. A naive application of NERF would be a massive bottleneck, but recent works [^5] can do it in parallel across the sequence dimension. The hope is for the model to get good at getting roughly correct interresidue distances at the expense of a possibly higher MSE with the true set of angles. Finally, largely inspired by AlphaFold2, perhaps some form of recycling could be employed where the model initially focuses on local features and iteratively refines it to fold the structure meaningfully, reminiscent of a hierarchical approach. This may cause things to be considerably slower though.
+I feel that the model could be improved with some minimal modifications. Perhaps the model could be additionally supplied by more explicit global features, e.g. contact maps, and probed to also reconstruct it, forcing it to achieve some form of global awareness. However, balancing this joint loss may be a challenge. Another option could be to preserve the diffusion process but use a loss acting on the 3D coordinates, using NERF for reconstruction. A naive application of NERF would be a massive bottleneck, but recent works [^5] can do it in parallel across the sequence dimension. The hope is for the model to get good at getting roughly correct interresidue distances at the expense of a possibly higher MSE with the true set of angles. Finally, largely inspired by AlphaFold2, some form of recycling could be employed where the model initially focuses on local features and iteratively refines it to fold the structure meaningfully, reminiscent of a hierarchical approach. This involves handling a tradeoff between speed and quality.
 
 ## References
 
