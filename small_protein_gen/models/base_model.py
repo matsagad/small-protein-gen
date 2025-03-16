@@ -102,7 +102,7 @@ class DefaultLightningModule(abc.ABC, L.LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-    
+
     def on_save_checkpoint(self, checkpoint):
         state_dict = checkpoint["state_dict"]
         keys = list(state_dict.keys())
@@ -129,3 +129,6 @@ class BaseDenoiser(DefaultLightningModule):
         self.register_module(
             "noise_scheduler", get_scheduler(noise_schedule)(n_time_steps)
         )
+
+
+BaseFlowModel = DefaultLightningModule
